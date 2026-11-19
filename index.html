@@ -129,6 +129,15 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:24px 16px 10p
 
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 
+<div class="modal" id="loginModal" style="align-items:center"><div class="sheet" style="max-width:380px;border-radius:22px;padding:24px 20px">
+  <h2 style="font-size:19px;margin-bottom:6px">🔐 Đăng nhập Admin</h2>
+  <p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">Nhập mật khẩu quản trị để tiếp tục.</p>
+  <input id="loginPass" type="password" placeholder="Mật khẩu admin" autocomplete="current-password" style="width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;font-size:16px">
+  <div id="loginErr" style="color:#c62828;font-size:13px;min-height:18px;margin-top:6px"></div>
+  <button class="btn pri" style="width:100%;margin-top:6px" onclick="doLogin()">Đăng nhập</button>
+  <button class="btn ghost" style="width:100%;margin-top:8px" onclick="closeLogin()">Huỷ</button>
+</div></div>
+
 <div class="admin" id="admin"><div class="in">
   <button class="btn ghost" onclick="closeAdmin()">← Về trang bán hàng</button>
   <h2>🔐 Trang Admin — quản lý album</h2>
@@ -220,7 +229,7 @@ async function load(){
 }
 async function syncOnline(){
   if(!ONLINE) return true;
-  const pw=sessionStorage.getItem("nq_pass")||conf.pass;
+  const pw=sGet("nq_pass")||conf.pass;
   // Up moi anh dang data: len Blob, thay bang link that
   for(const p of products){ for(let i=0;i<(p.imgs||[]).length;i++){
     if(p.imgs[i].startsWith("data:")){
@@ -278,11 +287,23 @@ function closeM(){document.getElementById("modal").classList.remove("open")}
 document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")closeM()});
 function copyBank(){const m=conf.bank.match(/\d{8,}/);navigator.clipboard.writeText(m?m[0]:conf.bank).then(()=>toast("Đã copy số tài khoản ✔"))}
 /* ADMIN */
+function sGet(k){try{return sessionStorage.getItem(k)}catch(e){return null}}
+function sSet(k,v){try{sessionStorage.setItem(k,v)}catch(e){}}
 function openAdmin(){
-  if(sessionStorage.getItem("nq_admin")==="1"){showAdmin();return}
-  const pw=prompt("Nhập mật khẩu Admin:"); if(pw===null)return;
-  if(pw===conf.pass){sessionStorage.setItem("nq_admin","1");sessionStorage.setItem("nq_pass",pw);showAdmin()} else alert("Sai mật khẩu!");
+  if(sGet("nq_admin")==="1"){showAdmin();return}
+  document.getElementById("loginErr").textContent="";
+  document.getElementById("loginPass").value="";
+  document.getElementById("loginModal").classList.add("open");
+  setTimeout(()=>{try{document.getElementById("loginPass").focus()}catch(e){}},350);
 }
+function closeLogin(){document.getElementById("loginModal").classList.remove("open")}
+function doLogin(){
+  const pw=document.getElementById("loginPass").value;
+  if(pw===conf.pass){sSet("nq_admin","1");sSet("nq_pass",pw);closeLogin();showAdmin()}
+  else document.getElementById("loginErr").textContent="Sai mật khẩu, thử lại nhé.";
+}
+document.getElementById("loginPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
+document.getElementById("loginModal").addEventListener("click",e=>{if(e.target.id==="loginModal")closeLogin()});
 function showAdmin(){document.getElementById("admin").classList.add("open");const n=document.getElementById("onlineStatus");if(n)n.textContent=ONLINE?"🟢 ONLINE (Vercel + Blob): bấm Lưu là khách thấy ngay, không cần xuất file.":"⚪ Bản tĩnh (GitHub Pages): lưu chỉ trên máy này — nhớ Xuất products.json rồi up lên GitHub để khách thấy.";renderAdmin()}
 function closeAdmin(){document.getElementById("admin").classList.remove("open");buildSocials();render()}
 function persist(){localStorage.setItem("nq_products",JSON.stringify(products))}
@@ -302,7 +323,7 @@ document.getElementById("fUrl").addEventListener("input",drawPreview);
 function resetForm(){["fId","fName","fPrice","fOld","fMeta","fDesc","fUrl"].forEach(i=>document.getElementById(i).value="");uploaded=[];drawPreview();document.getElementById("formTitle").textContent="➕ Thêm món mới"}
 async function saveProduct(){
   const name=document.getElementById("fName").value.trim(), price=+document.getElementById("fPrice").value;
-  if(!name||!price){alert("Nhập tên món và giá đã nhé");return}
+  if(!name||!price){toast("Nhập tên món và giá đã nhé");return}
   const url=document.getElementById("fUrl").value.trim();
   const imgs=[...uploaded,...(url?[url]:[])];
   const id=document.getElementById("fId").value;
@@ -313,7 +334,8 @@ async function saveProduct(){
   else toast("Đã lưu món ✔ (nhớ Xuất products.json để đăng lên GitHub)");
 }
 function editP(id){const p=products.find(x=>x.id===id);document.getElementById("fId").value=p.id;document.getElementById("fName").value=p.name;document.getElementById("fPrice").value=p.price;document.getElementById("fOld").value=p.old||"";document.getElementById("fCat").value=p.cat;document.getElementById("fStatus").value=p.status;document.getElementById("fMeta").value=p.meta||"";document.getElementById("fDesc").value=p.desc||"";uploaded=[...(p.imgs||[])];document.getElementById("fUrl").value="";drawPreview();document.getElementById("formTitle").textContent="✏️ Sửa món: "+p.name;window.scrollTo(0,0)}
-async function delP(id){if(confirm("Xoá món này?")){products=products.filter(p=>p.id!==id);persist();renderAdmin();render();if(ONLINE){try{await syncOnline();toast("Đã xoá online ✔")}catch(e){toast("Đã xoá trên máy, đăng online lỗi")}}else toast("Đã xoá")}}
+let _delArm={};
+async function delP(id){const now=Date.now();if(!_delArm[id]||now-_delArm[id]>3500){_delArm[id]=now;toast("Bấm Xoá thêm lần nữa để xác nhận xoá món này");return}delete _delArm[id];products=products.filter(p=>p.id!==id);persist();renderAdmin();render();if(ONLINE){try{await syncOnline();toast("Đã xoá online ✔")}catch(e){toast("Đã xoá trên máy, đăng online lỗi")}}else toast("Đã xoá")}
 function fillSettings(){document.getElementById("sFb").value=conf.fb;document.getElementById("sTiktok").value=conf.tiktok;document.getElementById("sIg").value=conf.ig;document.getElementById("sZalo").value=conf.zalo;document.getElementById("sPhone").value=conf.phone;document.getElementById("sBank").value=conf.bank}
 async function saveSettings(){conf.fb=document.getElementById("sFb").value.trim()||conf.fb;conf.tiktok=document.getElementById("sTiktok").value.trim()||conf.tiktok;conf.ig=document.getElementById("sIg").value.trim()||conf.ig;conf.zalo=document.getElementById("sZalo").value.trim()||conf.zalo;conf.phone=document.getElementById("sPhone").value.trim()||conf.phone;conf.bank=document.getElementById("sBank").value.trim()||conf.bank;const np=document.getElementById("sPass").value.trim();if(np)conf.pass=np;localStorage.setItem("nq_conf",JSON.stringify(conf));buildSocials();if(ONLINE){try{await syncOnline();toast("Đã lưu cài đặt online ✔")}catch(e){toast("Đã lưu trên máy, đăng online lỗi")}}else toast("Đã lưu cài đặt ✔")}
 function exportJson(){const clean={products,conf:{fb:conf.fb,tiktok:conf.tiktok,ig:conf.ig,zalo:conf.zalo,phone:conf.phone,bank:conf.bank}};const blob=new Blob([JSON.stringify(products,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="products.json";a.click();toast("Đã tải products.json — up file này lên GitHub nhé")}
