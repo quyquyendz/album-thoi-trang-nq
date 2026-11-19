@@ -132,7 +132,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:24px 16px 10p
 <div class="admin" id="admin"><div class="in">
   <button class="btn ghost" onclick="closeAdmin()">← Về trang bán hàng</button>
   <h2>🔐 Trang Admin — quản lý album</h2>
-  <div class="note"><b>Cách đăng hàng cho khách thấy:</b> web này chạy trên GitHub Pages / Vercel (web tĩnh) nên ảnh bạn up ở đây trước mắt chỉ lưu trên máy của bạn để xem thử. Khi ưng rồi, bấm <b>“Xuất products.json”</b> ở cuối trang và up file đó lên GitHub (cùng chỗ với file index.html) — khách vào web sẽ thấy hàng mới ngay. Mật khẩu admin mặc định: <b>admin123</b> (đổi trong phần Cài đặt bên dưới).</div>
+  <div class="note"><b id="onlineStatus">Đang kiểm tra chế độ lưu trữ…</b><br>Cách đăng hàng ở bản tĩnh GitHub Pages: bấm <b>“Xuất products.json”</b> ở cuối trang và up file đó lên GitHub (cùng chỗ với file index.html). Mật khẩu admin mặc định: <b>admin123</b> (đổi trong phần Cài đặt bên dưới; ở bản Vercel, mật khẩu thật đặt trong biến môi trường ADMIN_PASSWORD).</div>
 
   <div class="f">
     <h3 id="formTitle">➕ Thêm món mới</h3>
@@ -198,16 +198,39 @@ const SEED=[
 ];
 const DEFCONF={fb:"https://www.facebook.com/",tiktok:"https://www.tiktok.com/",ig:"https://www.instagram.com/",zalo:"0325606519",phone:"0865894390",bank:"Vietcombank — 1044956648\nChủ tài khoản: NGUYEN XUAN QUY\n(Nội dung CK: Tên + SĐT đặt hàng)",pass:"admin123"};
 let conf={...DEFCONF,...JSON.parse(localStorage.getItem("nq_conf")||"{}")};
-let products=null, curCat="all", uploaded=[];
+let products=null, curCat="all", uploaded=[], ONLINE=false;
 const fmt=n=>Number(n||0).toLocaleString("vi-VN")+"₫";
 const zaloLink=()=> "https://zalo.me/"+conf.zalo.replace(/\D/g,"");
 const telLink=()=> "tel:+84"+conf.phone.replace(/\D/g,"").replace(/^0/,"");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2600)}
 async function load(){
-  products=JSON.parse(localStorage.getItem("nq_products")||"null");
-  if(!products){ try{const r=await fetch("products.json",{cache:"no-store"}); if(r.ok){products=await r.json();}}catch(e){} }
-  if(!products||!Array.isArray(products)||!products.length) products=structuredClone(SEED);
+  // 1) Ban Vercel: lay du lieu online tu Blob (admin up la khach thay ngay)
+  try{
+    const r=await fetch("/api/products",{cache:"no-store"});
+    if(r.ok){ const d=await r.json(); if(d&&d.online===true) ONLINE=true; const arr=Array.isArray(d)?d:d.products;
+      if(Array.isArray(arr)&&arr.length){ products=arr; if(d.conf) conf={...conf,...d.conf}; } }
+  }catch(e){}
+  // 2) Ban tinh (GitHub Pages): localStorage -> products.json -> mau san
+  if(!products){
+    products=JSON.parse(localStorage.getItem("nq_products")||"null");
+    if(!products){ try{const r=await fetch("products.json",{cache:"no-store"}); if(r.ok){products=await r.json();}}catch(e){} }
+    if(!products||!Array.isArray(products)||!products.length) products=structuredClone(SEED);
+  }
   buildCats(); buildSocials(); render(); fillSettings();
+}
+async function syncOnline(){
+  if(!ONLINE) return true;
+  const pw=sessionStorage.getItem("nq_pass")||conf.pass;
+  // Up moi anh dang data: len Blob, thay bang link that
+  for(const p of products){ for(let i=0;i<(p.imgs||[]).length;i++){
+    if(p.imgs[i].startsWith("data:")){
+      const r=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":pw},body:JSON.stringify({data:p.imgs[i]})});
+      if(!r.ok) throw new Error("up anh loi");
+      p.imgs[i]=(await r.json()).url;
+    } } }
+  const r=await fetch("/api/products",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":pw},body:JSON.stringify({products,conf:{fb:conf.fb,tiktok:conf.tiktok,ig:conf.ig,zalo:conf.zalo,phone:conf.phone,bank:conf.bank}})});
+  if(!r.ok) throw new Error("luu online loi");
+  return true;
 }
 function buildCats(){
   document.getElementById("cats").innerHTML=CATS.map(([k,v])=>`<button class="cat ${k===curCat?'on':''}" onclick="setCat('${k}')">${v}</button>`).join("");
@@ -258,9 +281,9 @@ function copyBank(){const m=conf.bank.match(/\d{8,}/);navigator.clipboard.writeT
 function openAdmin(){
   if(sessionStorage.getItem("nq_admin")==="1"){showAdmin();return}
   const pw=prompt("Nhập mật khẩu Admin:"); if(pw===null)return;
-  if(pw===conf.pass){sessionStorage.setItem("nq_admin","1");showAdmin()} else alert("Sai mật khẩu!");
+  if(pw===conf.pass){sessionStorage.setItem("nq_admin","1");sessionStorage.setItem("nq_pass",pw);showAdmin()} else alert("Sai mật khẩu!");
 }
-function showAdmin(){document.getElementById("admin").classList.add("open");renderAdmin()}
+function showAdmin(){document.getElementById("admin").classList.add("open");const n=document.getElementById("onlineStatus");if(n)n.textContent=ONLINE?"🟢 ONLINE (Vercel + Blob): bấm Lưu là khách thấy ngay, không cần xuất file.":"⚪ Bản tĩnh (GitHub Pages): lưu chỉ trên máy này — nhớ Xuất products.json rồi up lên GitHub để khách thấy.";renderAdmin()}
 function closeAdmin(){document.getElementById("admin").classList.remove("open");buildSocials();render()}
 function persist(){localStorage.setItem("nq_products",JSON.stringify(products))}
 function renderAdmin(){
@@ -277,7 +300,7 @@ function compress(file){return new Promise(res=>{const img=new Image();img.onloa
 function drawPreview(){const u=document.getElementById("fUrl").value.trim();const all=[...uploaded,...(u?[u]:[])];document.getElementById("fPreview").innerHTML=all.map(s=>`<img src="${s}">`).join("")}
 document.getElementById("fUrl").addEventListener("input",drawPreview);
 function resetForm(){["fId","fName","fPrice","fOld","fMeta","fDesc","fUrl"].forEach(i=>document.getElementById(i).value="");uploaded=[];drawPreview();document.getElementById("formTitle").textContent="➕ Thêm món mới"}
-function saveProduct(){
+async function saveProduct(){
   const name=document.getElementById("fName").value.trim(), price=+document.getElementById("fPrice").value;
   if(!name||!price){alert("Nhập tên món và giá đã nhé");return}
   const url=document.getElementById("fUrl").value.trim();
@@ -285,12 +308,14 @@ function saveProduct(){
   const id=document.getElementById("fId").value;
   const data={name,price,old:+document.getElementById("fOld").value||0,cat:document.getElementById("fCat").value,status:document.getElementById("fStatus").value,meta:document.getElementById("fMeta").value.trim(),desc:document.getElementById("fDesc").value.trim(),imgs:imgs.length?imgs:["https://picsum.photos/seed/nq"+Date.now()+"/600/800"]};
   if(id){Object.assign(products.find(p=>p.id==id),data)} else {products.unshift({id:Date.now(),...data})}
-  persist(); renderAdmin(); render(); resetForm(); toast("Đã lưu món ✔ (nhớ Xuất products.json để đăng lên GitHub)");
+  persist(); renderAdmin(); render(); resetForm();
+  if(ONLINE){ toast("Đang up ảnh & đăng online…"); try{await syncOnline(); persist(); renderAdmin(); render(); toast("Đã đăng online ✔ Khách thấy ngay rồi")}catch(e){toast("Lưu trên máy OK nhưng đăng online lỗi — kiểm tra mật khẩu/Blob rồi Lưu lại")} }
+  else toast("Đã lưu món ✔ (nhớ Xuất products.json để đăng lên GitHub)");
 }
 function editP(id){const p=products.find(x=>x.id===id);document.getElementById("fId").value=p.id;document.getElementById("fName").value=p.name;document.getElementById("fPrice").value=p.price;document.getElementById("fOld").value=p.old||"";document.getElementById("fCat").value=p.cat;document.getElementById("fStatus").value=p.status;document.getElementById("fMeta").value=p.meta||"";document.getElementById("fDesc").value=p.desc||"";uploaded=[...(p.imgs||[])];document.getElementById("fUrl").value="";drawPreview();document.getElementById("formTitle").textContent="✏️ Sửa món: "+p.name;window.scrollTo(0,0)}
-function delP(id){if(confirm("Xoá món này?")){products=products.filter(p=>p.id!==id);persist();renderAdmin();render();toast("Đã xoá")}}
+async function delP(id){if(confirm("Xoá món này?")){products=products.filter(p=>p.id!==id);persist();renderAdmin();render();if(ONLINE){try{await syncOnline();toast("Đã xoá online ✔")}catch(e){toast("Đã xoá trên máy, đăng online lỗi")}}else toast("Đã xoá")}}
 function fillSettings(){document.getElementById("sFb").value=conf.fb;document.getElementById("sTiktok").value=conf.tiktok;document.getElementById("sIg").value=conf.ig;document.getElementById("sZalo").value=conf.zalo;document.getElementById("sPhone").value=conf.phone;document.getElementById("sBank").value=conf.bank}
-function saveSettings(){conf.fb=document.getElementById("sFb").value.trim()||conf.fb;conf.tiktok=document.getElementById("sTiktok").value.trim()||conf.tiktok;conf.ig=document.getElementById("sIg").value.trim()||conf.ig;conf.zalo=document.getElementById("sZalo").value.trim()||conf.zalo;conf.phone=document.getElementById("sPhone").value.trim()||conf.phone;conf.bank=document.getElementById("sBank").value.trim()||conf.bank;const np=document.getElementById("sPass").value.trim();if(np)conf.pass=np;localStorage.setItem("nq_conf",JSON.stringify(conf));buildSocials();toast("Đã lưu cài đặt ✔ — link Facebook/TikTok/Instagram thật hãy dán vào đây, rồi gửi lại mình để mình gắn cứng lên web public")}
+async function saveSettings(){conf.fb=document.getElementById("sFb").value.trim()||conf.fb;conf.tiktok=document.getElementById("sTiktok").value.trim()||conf.tiktok;conf.ig=document.getElementById("sIg").value.trim()||conf.ig;conf.zalo=document.getElementById("sZalo").value.trim()||conf.zalo;conf.phone=document.getElementById("sPhone").value.trim()||conf.phone;conf.bank=document.getElementById("sBank").value.trim()||conf.bank;const np=document.getElementById("sPass").value.trim();if(np)conf.pass=np;localStorage.setItem("nq_conf",JSON.stringify(conf));buildSocials();if(ONLINE){try{await syncOnline();toast("Đã lưu cài đặt online ✔")}catch(e){toast("Đã lưu trên máy, đăng online lỗi")}}else toast("Đã lưu cài đặt ✔")}
 function exportJson(){const clean={products,conf:{fb:conf.fb,tiktok:conf.tiktok,ig:conf.ig,zalo:conf.zalo,phone:conf.phone,bank:conf.bank}};const blob=new Blob([JSON.stringify(products,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="products.json";a.click();toast("Đã tải products.json — up file này lên GitHub nhé")}
 function importJson(inp){const f=inp.files[0];if(!f)return;f.text().then(t=>{const d=JSON.parse(t);if(Array.isArray(d)){products=d;persist();renderAdmin();render();toast("Đã nhập dữ liệu ✔")}else alert("File không đúng định dạng")})}
 function resetAll(){if(confirm("Về dữ liệu mẫu ban đầu?")){localStorage.removeItem("nq_products");products=structuredClone(SEED);renderAdmin();render();toast("Đã khôi phục mẫu")}}
