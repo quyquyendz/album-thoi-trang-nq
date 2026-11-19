@@ -87,10 +87,9 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:24px 16px 10p
 </head>
 <body>
 <header><div class="head">
-  <div class="logo">NQ <span>GUANGZHOU</span><small>NGUYỄN QUÝ • THỜI TRANG QUẢNG CHÂU</small></div>
+  <div class="logo" id="logoSecret" title="">NQ <span>GUANGZHOU</span><small>NGUYỄN QUÝ • THỜI TRANG QUẢNG CHÂU</small></div>
   <div class="sp"></div>
   <a class="hbtn" href="#pay">Thanh toán</a>
-  <button class="hbtn dark" onclick="openAdmin()">Admin</button>
 </div></header>
 
 <section class="hero">
@@ -122,7 +121,8 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:24px 16px 10p
 <footer>
   <b>NQ GUANGZHOU — Nguyễn Quý</b> • Thời trang Quảng Châu<br>
   📍 Thái Nguyên — Hà Nội • 📞 <a href="tel:+84865894390">0865 894 390</a> • Zalo <a id="ftZalo" href="#">0325 606 519</a><br>
-  © 2026 NQ Guangzhou. Giá &amp; tình trạng hàng cập nhật trong album.
+  © 2026 NQ Guangzhou. Giá &amp; tình trạng hàng cập nhật trong album.<br>
+  <span id="secretAdmin" onclick="openAdmin()" style="opacity:.28;font-size:10px;cursor:pointer;user-select:none">• quản trị •</span>
 </footer>
 
 <div class="floatbar" id="floatbar"></div>
@@ -319,7 +319,11 @@ async function saveSettings(){conf.fb=document.getElementById("sFb").value.trim(
 function exportJson(){const clean={products,conf:{fb:conf.fb,tiktok:conf.tiktok,ig:conf.ig,zalo:conf.zalo,phone:conf.phone,bank:conf.bank}};const blob=new Blob([JSON.stringify(products,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="products.json";a.click();toast("Đã tải products.json — up file này lên GitHub nhé")}
 function importJson(inp){const f=inp.files[0];if(!f)return;f.text().then(t=>{const d=JSON.parse(t);if(Array.isArray(d)){products=d;persist();renderAdmin();render();toast("Đã nhập dữ liệu ✔")}else alert("File không đúng định dạng")})}
 function resetAll(){if(confirm("Về dữ liệu mẫu ban đầu?")){localStorage.removeItem("nq_products");products=structuredClone(SEED);renderAdmin();render();toast("Đã khôi phục mẫu")}}
+/* Loi vao Admin kin: #admin tren URL, cham logo 5 lan, hoac cham dong chu mo duoi chan trang */
+let _logoClicks=0,_logoTimer=null;
+document.getElementById("logoSecret").addEventListener("click",()=>{ _logoClicks++; clearTimeout(_logoTimer); _logoTimer=setTimeout(()=>_logoClicks=0,1800); if(_logoClicks>=5){_logoClicks=0;openAdmin();} });
 load();
+if(location.hash==="#admin"||new URLSearchParams(location.search).has("admin")){ setTimeout(openAdmin,600); }
 </script>
 </body>
 </html>
