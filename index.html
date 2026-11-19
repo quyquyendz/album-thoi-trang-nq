@@ -141,7 +141,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:24px 16px 10p
 <div class="admin" id="admin"><div class="in">
   <button class="btn ghost" onclick="closeAdmin()">← Về trang bán hàng</button>
   <h2>🔐 Trang Admin — quản lý album</h2>
-  <div class="note"><b id="onlineStatus">Đang kiểm tra chế độ lưu trữ…</b><br>Cách đăng hàng ở bản tĩnh GitHub Pages: bấm <b>“Xuất products.json”</b> ở cuối trang và up file đó lên GitHub (cùng chỗ với file index.html). Mật khẩu admin mặc định: <b>admin123</b> (đổi trong phần Cài đặt bên dưới; ở bản Vercel, mật khẩu thật đặt trong biến môi trường ADMIN_PASSWORD).</div>
+  <div class="note"><b id="onlineStatus">Đang kiểm tra chế độ lưu trữ…</b><br>Cách đăng hàng ở bản tĩnh GitHub Pages: bấm <b>“Xuất products.json”</b> ở cuối trang và up file đó lên GitHub (cùng chỗ với file index.html). Mật khẩu admin mặc định: <b>admin123</b> (đổi trong phần Cài đặt bên dưới; ở bản Vercel, mật khẩu thật đặt trong biến môi trường ADMIN_PASSWORD).<div id="syncStatus" style="margin-top:8px;font-weight:700"></div><button class="btn gold" style="margin-top:8px;padding:10px 18px" onclick="manualSync()">☁️ Đăng online ngay</button></div>
 
   <div class="f">
     <h3 id="formTitle">➕ Thêm món mới</h3>
@@ -213,11 +213,15 @@ const zaloLink=()=> "https://zalo.me/"+conf.zalo.replace(/\D/g,"");
 const telLink=()=> "tel:+84"+conf.phone.replace(/\D/g,"").replace(/^0/,"");
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2600)}
 async function load(){
+  let localSaved=null; try{localSaved=JSON.parse(localStorage.getItem("nq_products")||"null")}catch(e){}
   // 1) Ban Vercel: lay du lieu online tu Blob (admin up la khach thay ngay)
   try{
     const r=await fetch("/api/products",{cache:"no-store"});
     if(r.ok){ const d=await r.json(); if(d&&d.online===true) ONLINE=true; const arr=Array.isArray(d)?d:d.products;
-      if(Array.isArray(arr)&&arr.length){ products=arr; if(d.conf) conf={...conf,...d.conf}; } }
+      if(Array.isArray(arr)&&arr.length){ products=arr; if(d.conf) conf={...conf,...d.conf};
+        // Tu chua lanh: mon da luu tren may nay nhung chua len server thi gop lai va dang bu
+        if(Array.isArray(localSaved)){ const ids=new Set(arr.map(p=>p.id)); const extras=localSaved.filter(p=>!ids.has(p.id)); if(extras.length){ products=[...extras,...arr]; window._pendingExtras=extras.length; } }
+      } }
   }catch(e){}
   // 2) Ban tinh (GitHub Pages): localStorage -> products.json -> mau san
   if(!products){
@@ -226,6 +230,14 @@ async function load(){
     if(!products||!Array.isArray(products)||!products.length) products=structuredClone(SEED);
   }
   buildCats(); buildSocials(); render(); fillSettings();
+  if(ONLINE&&window._pendingExtras&&sGet("nq_pass")){ syncOnline().then(()=>{persist();render();window._pendingExtras=0;setSync("✅ Đã tự đăng bù các món còn thiếu lên online.")}).catch(()=>{setSync("⚠️ Có món chưa lên online — bấm nút 'Đăng online ngay' ở trên.")}) }
+}
+function setSync(msg){const e=document.getElementById("syncStatus"); if(e) e.innerHTML=msg}
+async function manualSync(){
+  if(!ONLINE){setSync("⚪ Bản tĩnh không đăng online tự động được — dùng mục Xuất products.json ở cuối trang.");return}
+  setSync("⏳ Đang đăng online… đừng đóng trang nhé.");
+  try{ await syncOnline(); persist(); render(); if(document.getElementById("admin").classList.contains("open")) renderAdmin(); window._pendingExtras=0; setSync("✅ Đã đăng online xong — khách vào web là thấy ngay."); toast("Đã đăng online ✔"); }
+  catch(e){ setSync("❌ Đăng online lỗi ("+e.message+") — kiểm tra mạng rồi bấm nút này lại."); }
 }
 async function syncOnline(){
   if(!ONLINE) return true;
@@ -304,7 +316,7 @@ function doLogin(){
 }
 document.getElementById("loginPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin()});
 document.getElementById("loginModal").addEventListener("click",e=>{if(e.target.id==="loginModal")closeLogin()});
-function showAdmin(){document.getElementById("admin").classList.add("open");const n=document.getElementById("onlineStatus");if(n)n.textContent=ONLINE?"🟢 ONLINE (Vercel + Blob): bấm Lưu là khách thấy ngay, không cần xuất file.":"⚪ Bản tĩnh (GitHub Pages): lưu chỉ trên máy này — nhớ Xuất products.json rồi up lên GitHub để khách thấy.";renderAdmin()}
+function showAdmin(){document.getElementById("admin").classList.add("open");const n=document.getElementById("onlineStatus");if(n)n.textContent=ONLINE?"🟢 ONLINE (Vercel + Blob): bấm Lưu là khách thấy ngay, không cần xuất file.":"⚪ Bản tĩnh (GitHub Pages): lưu chỉ trên máy này — nhớ Xuất products.json rồi up lên GitHub để khách thấy.";if(window._pendingExtras)setSync("⚠️ Có "+window._pendingExtras+" món đã lưu trên máy này nhưng chưa lên online — bấm nút 'Đăng online ngay' bên dưới.");renderAdmin()}
 function closeAdmin(){document.getElementById("admin").classList.remove("open");buildSocials();render()}
 function persist(){localStorage.setItem("nq_products",JSON.stringify(products))}
 function renderAdmin(){
@@ -330,7 +342,7 @@ async function saveProduct(){
   const data={name,price,old:+document.getElementById("fOld").value||0,cat:document.getElementById("fCat").value,status:document.getElementById("fStatus").value,meta:document.getElementById("fMeta").value.trim(),desc:document.getElementById("fDesc").value.trim(),imgs:imgs.length?imgs:["https://picsum.photos/seed/nq"+Date.now()+"/600/800"]};
   if(id){Object.assign(products.find(p=>p.id==id),data)} else {products.unshift({id:Date.now(),...data})}
   persist(); renderAdmin(); render(); resetForm();
-  if(ONLINE){ toast("Đang up ảnh & đăng online…"); try{await syncOnline(); persist(); renderAdmin(); render(); toast("Đã đăng online ✔ Khách thấy ngay rồi")}catch(e){toast("Lưu trên máy OK nhưng đăng online lỗi — kiểm tra mật khẩu/Blob rồi Lưu lại")} }
+  if(ONLINE){ setSync("⏳ Đang up ảnh & đăng online… đừng đóng trang nhé."); toast("Đang up ảnh & đăng online…"); try{await syncOnline(); persist(); renderAdmin(); render(); setSync("✅ Đã đăng online — khách thấy ngay rồi."); toast("Đã đăng online ✔ Khách thấy ngay rồi")}catch(e){setSync("❌ Món đã lưu trên máy này nhưng CHƯA lên online ("+e.message+") — bấm nút 'Đăng online ngay' ở đầu trang Admin để đăng lại."); toast("Chưa đăng được online — bấm 'Đăng online ngay' ở đầu trang Admin")} }
   else toast("Đã lưu món ✔ (nhớ Xuất products.json để đăng lên GitHub)");
 }
 function editP(id){const p=products.find(x=>x.id===id);document.getElementById("fId").value=p.id;document.getElementById("fName").value=p.name;document.getElementById("fPrice").value=p.price;document.getElementById("fOld").value=p.old||"";document.getElementById("fCat").value=p.cat;document.getElementById("fStatus").value=p.status;document.getElementById("fMeta").value=p.meta||"";document.getElementById("fDesc").value=p.desc||"";uploaded=[...(p.imgs||[])];document.getElementById("fUrl").value="";drawPreview();document.getElementById("formTitle").textContent="✏️ Sửa món: "+p.name;window.scrollTo(0,0)}
